@@ -36,7 +36,7 @@ Plain JavaScript, no dependencies, no native code — the same build runs on des
 | # | Step | |
 | --- | --- | --- |
 | 1️⃣ | **Make an app password** in Nextcloud → *Settings → Security* | Never your account password. It can be revoked on its own, and it is the only credential stored. |
-| 2️⃣ | **Fill in the settings** in Obsidian → *Nextcloud Tasks* | Address is the base only: `https://cloud.example.com`, **not** `/remote.php/dav`. |
+| 2️⃣ | **Fill in the settings** in Obsidian → *Nextcloud Tasks* | Use the Nextcloud base address, e.g. `https://cloud.example.com` or `https://cloud.example.com/nextcloud` for a subdirectory. An address ending in `/index.php/` also works. |
 | 3️⃣ | **Press Load** | Every list on your account appears. Tick the ones you want, rename the headings, pick colours, drag them into order. No list yet? **Create list** makes one on the server. |
 | 4️⃣ | **Set the refresh interval** | 5 minutes by default, **Never** if you prefer by hand. It only runs while a task list is on screen, so it costs nothing while you write. |
 | 5️⃣ | **Stuck? Press Test connection** | It reports every discovery step separately, so a failure points at one line instead of "could not connect". |

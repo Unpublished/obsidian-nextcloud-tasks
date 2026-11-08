@@ -14,7 +14,7 @@
 
 import * as xml from '../src/xml.js';
 import * as ics from '../src/ics.js';
-import { CalDav, DavError, basicAuth, normalizeBase } from '../src/caldav.js';
+import { CalDav, DavError, basicAuth, normalizeBase, absolute } from '../src/caldav.js';
 
 /* ------------------------------------------------------------- harness */
 
@@ -452,8 +452,19 @@ const client = (routes) => {
 };
 
 eq(normalizeBase('cloud.example.com/index.php/'), 'https://cloud.example.com', 'caldav: Basis-URL normalisiert');
+eq(normalizeBase('https://cloud.example.com/index.php/'), BASE, 'caldav: index.php im Root entfernen');
+eq(normalizeBase('https://cloud.example.com/nextcloud/index.php/'), `${BASE}/nextcloud`,
+  'caldav: index.php entfernen und Unterverzeichnis behalten');
+eq(normalizeBase('https://cloud.example.com/nextcloud/remote.php/dav/calendars/alice/'), `${BASE}/nextcloud`,
+  'caldav: DAV-Pfad entfernen und Unterverzeichnis behalten');
 eq(normalizeBase('https://cloud.example.com/remote.php/dav/calendars/alice/'), 'https://cloud.example.com',
   'caldav: eingefügter DAV-Pfad wird abgeschnitten');
+eq(absolute(`${BASE}/nextcloud`, '/nextcloud/remote.php/dav/'), `${BASE}/nextcloud/remote.php/dav/`,
+  'caldav: absoluter Pfad wird am Origin aufgelöst');
+eq(absolute(`${BASE}/nextcloud`, 'remote.php/dav/'), `${BASE}/nextcloud/remote.php/dav/`,
+  'caldav: relativer Pfad wird am Nextcloud-Verzeichnis aufgelöst');
+eq(absolute(`${BASE}/nextcloud`, 'https://other.example.com/dav/'), 'https://other.example.com/dav/',
+  'caldav: absolute URL bleibt unverändert');
 eq(basicAuth('alice', 'gehäim'), `Basic ${Buffer.from('alice:gehäim', 'utf8').toString('base64')}`,
   'caldav: Basic-Auth ist UTF-8-fest');
 
@@ -477,6 +488,58 @@ eq(basicAuth('alice', 'gehäim'), `Basic ${Buffer.from('alice:gehäim', 'utf8').
 
     await dav.discover();
     eq(request.calls.length, 3, 'caldav: Discovery wird zwischengespeichert');
+  }
+
+  {
+    const subBase = `${BASE}/nextcloud`;
+    const withSubdir = (xmlText) => xmlText.replaceAll('/remote.php/dav/', '/nextcloud/remote.php/dav/');
+    const routes = new Map([
+      [`PROPFIND ${subBase}/remote.php/dav/`, MS_PRINCIPAL],
+      [`PROPFIND ${subBase}/remote.php/dav/principals/users/alice/`, MS_HOME],
+      [`PROPFIND ${subBase}/remote.php/dav/calendars/alice/`, MS_LISTS],
+      [`REPORT ${subBase}/remote.php/dav/calendars/alice/persoenlich/`, MS_TASKS],
+    ]);
+    const calls = [];
+    const request = async (req) => {
+      calls.push(req);
+      const body = routes.get(`${req.method} ${req.url}`);
+      return body ? { status: 207, text: withSubdir(body) } : { status: 404 };
+    };
+    const dav = new CalDav({ baseUrl: `${subBase}/index.php/`, username: 'alice', password: 'app-pw', request });
+    const d = await dav.discover();
+    eq(d.principal, `${subBase}/remote.php/dav/principals/users/alice/`, 'caldav: Principal im Unterverzeichnis');
+    eq(d.home, `${subBase}/remote.php/dav/calendars/alice/`, 'caldav: Home im Unterverzeichnis');
+    eq(d.lists.length, 1, 'caldav: VTODO-Liste im Unterverzeichnis gefunden');
+    eq(d.lists[0].url, `${subBase}/remote.php/dav/calendars/alice/persoenlich/`, 'caldav: Listen-URL im Unterverzeichnis');
+    const rows = await dav.listTasks(d.lists[0].url);
+    eq(rows[0].url, `${subBase}/remote.php/dav/calendars/alice/persoenlich/abc-123.ics`,
+      'caldav: Aufgaben-URL im Unterverzeichnis');
+    deep(calls.map((c) => `${c.method} ${c.url}`), [...routes.keys()], 'caldav: Anfragen ohne doppeltes Unterverzeichnis');
+  }
+
+  {
+    const subBase = `${BASE}/nextcloud`;
+    const listUrl = `${subBase}/remote.php/dav/calendars/alice/persoenlich/`;
+    const objectUrl = `${listUrl}abc-123.ics`;
+    const objects = `<d:multistatus xmlns:d="DAV:">
+      <d:response><d:href>/nextcloud/remote.php/dav/calendars/alice/persoenlich/</d:href></d:response>
+      <d:response><d:href>/nextcloud/remote.php/dav/calendars/alice/persoenlich/abc-123.ics</d:href>
+        <d:propstat><d:prop><d:getetag>"etag-1"</d:getetag></d:prop>
+        <d:status>HTTP/1.1 200 OK</d:status></d:propstat></d:response></d:multistatus>`;
+    const calls = [];
+    const request = async (req) => {
+      calls.push(`${req.method} ${req.url}`);
+      if (req.method === 'REPORT' && req.url === listUrl) return { status: 501 };
+      if (req.method === 'PROPFIND' && req.url === listUrl) return { status: 207, text: objects };
+      if (req.method === 'GET' && req.url === objectUrl) return { status: 200, text: TASK };
+      return { status: 404 };
+    };
+    const dav = new CalDav({ baseUrl: subBase, username: 'alice', password: 'app-pw', request });
+    const rows = await dav.listTasks(listUrl);
+    eq(rows.length, 1, 'caldav: Fallback liest eine Aufgabe im Unterverzeichnis');
+    eq(rows[0].url, objectUrl, 'caldav: Fallback-Aufgaben-URL im Unterverzeichnis');
+    deep(calls, [`REPORT ${listUrl}`, `PROPFIND ${listUrl}`, `GET ${objectUrl}`],
+      'caldav: Fallback-Anfragen ohne doppeltes Unterverzeichnis');
   }
 
   /* ---- reading ---- */

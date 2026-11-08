@@ -38,7 +38,7 @@ function basicAuth(user, pass) {
   return `Basic ${btoa(bin)}`;
 }
 
-/** `https://cloud.example.com/index.php/` → `https://cloud.example.com` */
+/** Strip Nextcloud entry points while preserving an installation subdirectory. */
 function normalizeBase(url) {
   let u = String(url || '').trim();
   if (!u) return '';
@@ -49,11 +49,12 @@ function normalizeBase(url) {
   return u;
 }
 
-/** DAV hrefs come back as absolute paths; make them absolute URLs. */
+/** Resolve root-relative DAV hrefs against the origin, not the installation path. */
 function absolute(base, href) {
   const h = String(href || '');
   if (/^https?:\/\//i.test(h)) return h;
-  return base + (h.startsWith('/') ? h : `/${h}`);
+  if (h.startsWith('/')) return base.replace(/^(https?:\/\/[^/]+).*$/i, '$1') + h;
+  return `${base}/${h}`;
 }
 
 /** Path part of a URL, which is what an href in a multistatus is. */
@@ -87,7 +88,7 @@ function describe(status, method, url) {
 class CalDav {
   /**
    * @param {object} o
-   * @param {string} o.baseUrl   Nextcloud root, e.g. https://cloud.example.com
+   * @param {string} o.baseUrl   Nextcloud root, e.g. https://cloud.example.com/nextcloud
    * @param {string} o.username
    * @param {string} o.password  app password, never the account password
    * @param {function} o.request requestUrl-compatible; injected for testing
