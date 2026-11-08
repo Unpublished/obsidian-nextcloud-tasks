@@ -112,9 +112,12 @@ up here on the next refresh. The plugin itself also runs in the Obsidian mobile 
 ```bash
 npm install
 npm run lint     # eslint-plugin-obsidianmd — the rules the directory review runs
-npm test         # core, render and bundle suites: no install, no network, no credentials
 npm run build    # bundles src/ into main.js
+npm test         # core, render and bundle suites: no network or credentials
 ```
+
+The GitHub Actions build workflow also uploads `main.js`, `manifest.json` and `styles.css` as
+the `nextcloud-tasks` artifact.
 
 ```bash
 VAULT="/path/to/your/vault" bash scripts/deploy-to-vault.sh          # deploy a local build
